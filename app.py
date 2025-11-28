@@ -993,6 +993,52 @@ def page_dashboard(username: str):
             "debtor": lambda x: list(x)
         }).reset_index()
         
+        # Bulk delete option
+        with st.expander("🗑️ Bulk Delete Expenses", expanded=False):
+            st.markdown("*Select multiple expenses to delete at once*")
+            
+            # Create checkboxes for each expense
+            selected_for_deletion = []
+            for _, expense in expense_groups.iterrows():
+                debtors = ", ".join(expense["debtor"])
+                label = f"**{expense['description']}** - ${expense['amount_total']:,.2f} (Shared with: {debtors})"
+                if st.checkbox(label, key=f"bulk_select_{expense['purchase_id']}"):
+                    selected_for_deletion.append(expense['purchase_id'])
+            
+            if selected_for_deletion:
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    st.metric("📊 Selected", len(selected_for_deletion))
+                with col2:
+                    selected_total = expense_groups[expense_groups['purchase_id'].isin(selected_for_deletion)]['amount_total'].sum()
+                    st.metric("💰 Total Amount", f"${selected_total:,.2f}")
+                
+                st.warning(f"⚠️ You are about to delete {len(selected_for_deletion)} expense(s). This action cannot be undone!")
+                
+                if st.button("🗑️ Delete Selected Expenses", type="primary", use_container_width=True):
+                    deleted_count = 0
+                    errors = []
+                    
+                    for purchase_id in selected_for_deletion:
+                        try:
+                            delete_expense_debts(username, purchase_id)
+                            deleted_count += 1
+                        except Exception as e:
+                            exp_desc = expense_groups[expense_groups['purchase_id'] == purchase_id]['description'].iloc[0]
+                            errors.append(f"Error deleting '{exp_desc}': {str(e)}")
+                    
+                    if errors:
+                        st.warning(f"Deleted {deleted_count} expenses with {len(errors)} errors:")
+                        for error in errors:
+                            st.error(error)
+                    else:
+                        st.success(f"🎉 Successfully deleted {deleted_count} expense(s)!")
+                    
+                    st.rerun()
+        
+        st.markdown("---")
+        
+        # Individual delete options
         st.write("**Your expenses:**")
         for _, expense in expense_groups.iterrows():
             debtors = ", ".join(expense["debtor"])
@@ -1001,7 +1047,7 @@ def page_dashboard(username: str):
                 st.write(f"**{expense['description']}** - ${expense['amount_total']:,.2f} (Shared with: {debtors})")
                 st.caption(f"Created: {expense['timestamp']} | Purchase date: {expense['purchase_date']}")
             with col2:
-                if st.button("🗑️ Delete", key=f"delete_{expense['purchase_id']}"):
+                if st.button("🗑️", key=f"delete_{expense['purchase_id']}", help="Delete this expense"):
                     try:
                         delete_expense_debts(username, expense["purchase_id"])
                         st.success(f"Deleted expense: {expense['description']}")
