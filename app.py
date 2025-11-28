@@ -83,7 +83,7 @@ HISTORY_EMOJIS = ["📜", "📋", "📊", "📈", "📁", "🗂️"]
 # Positive psychology messages for different sections
 DASHBOARD_INTRO = [
     "Great job keeping track of your finances! 🌟",
-    "You're doing amazing with your household management! 💪",
+    "You're doing amazing sweety, with your household management! 💪",
     "Financial transparency builds stronger relationships! 🤝",
     "Every payment brings you closer to financial freedom! 🦋",
     "You're making smart money moves today! 🎯",
