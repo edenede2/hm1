@@ -1,6 +1,9 @@
 import io
 import uuid
 import random
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone, date
 from typing import Dict, List, Optional
 
@@ -89,6 +92,239 @@ def get_random_greeting(display_name: str) -> str:
 def get_random_emoji(emoji_list: List[str]) -> str:
     """Get a random emoji from a list."""
     return random.choice(emoji_list)
+
+# -------------------------------------------------------------------
+# EMAIL NOTIFICATIONS
+# -------------------------------------------------------------------
+
+def get_user_email(username: str) -> str:
+    """Get the full email address for a username."""
+    return f"{username}@gmail.com"
+
+def get_all_user_emails() -> List[str]:
+    """Get email addresses for all users."""
+    users_cfg = st.secrets.get("users", {})
+    return [get_user_email(username) for username in users_cfg.keys()]
+
+def create_email_html(title: str, body_content: str, action_user: str) -> str:
+    """Create a beautiful HTML email template."""
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background-color: #f5f5f5;
+                margin: 0;
+                padding: 0;
+            }}
+            .container {{
+                max-width: 600px;
+                margin: 20px auto;
+                background-color: #ffffff;
+                border-radius: 10px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                overflow: hidden;
+            }}
+            .header {{
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 30px;
+                text-align: center;
+            }}
+            .header h1 {{
+                margin: 0;
+                font-size: 28px;
+            }}
+            .content {{
+                padding: 30px;
+                color: #333;
+            }}
+            .content h2 {{
+                color: #667eea;
+                margin-top: 0;
+            }}
+            .info-box {{
+                background-color: #f8f9fa;
+                border-left: 4px solid #667eea;
+                padding: 15px;
+                margin: 20px 0;
+                border-radius: 4px;
+            }}
+            .button {{
+                display: inline-block;
+                background-color: #667eea;
+                color: white;
+                padding: 12px 30px;
+                text-decoration: none;
+                border-radius: 5px;
+                margin: 20px 0;
+            }}
+            .footer {{
+                background-color: #f8f9fa;
+                color: #666;
+                text-align: center;
+                padding: 20px;
+                font-size: 12px;
+            }}
+            .emoji {{
+                font-size: 24px;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🏠 Household Manager</h1>
+                <p style="margin: 10px 0 0 0; opacity: 0.9;">{title}</p>
+            </div>
+            <div class="content">
+                {body_content}
+                <p style="margin-top: 30px; color: #666;">
+                    <strong>Action by:</strong> {action_user}
+                </p>
+            </div>
+            <div class="footer">
+                <p>This is an automated notification from your Household Manager app.</p>
+                <p>💙 Manage your household expenses with ease</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+def send_email_notification(
+    subject: str,
+    title: str,
+    body_content: str,
+    action_user: str,
+    recipients: Optional[List[str]] = None
+) -> None:
+    """Send email notification to users."""
+    try:
+        sender_email = st.secrets["app"]["SENDER_EMAIL_ADDRESS"]
+        sender_password = st.secrets["app"]["SENDER_EMAIL_PASSWORD"]
+    except KeyError:
+        # Email not configured, skip silently
+        return
+    
+    if recipients is None:
+        recipients = get_all_user_emails()
+    
+    if not recipients:
+        return
+    
+    try:
+        # Create message
+        msg = MIMEMultipart('alternative')
+        msg['From'] = sender_email
+        msg['To'] = ', '.join(recipients)
+        msg['Subject'] = f"🏠 {subject}"
+        
+        # Create HTML content
+        html_content = create_email_html(title, body_content, action_user)
+        html_part = MIMEText(html_content, 'html')
+        msg.attach(html_part)
+        
+        # Send email
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+    except Exception as e:
+        # Don't crash the app if email fails, just log it
+        print(f"Failed to send email: {e}")
+
+def notify_new_expense(
+    uploader: str,
+    description: str,
+    total_amount: float,
+    affected_users: List[str]
+) -> None:
+    """Send notification when a new expense is added."""
+    users_cfg = st.secrets.get("users", {})
+    uploader_name = users_cfg.get(uploader, uploader)
+    
+    affected_names = [users_cfg.get(u, u) for u in affected_users]
+    affected_list = ", ".join(affected_names)
+    
+    body = f"""
+    <h2>💸 New Expense Added</h2>
+    <div class="info-box">
+        <p><strong>Description:</strong> {description}</p>
+        <p><strong>Total Amount:</strong> ${total_amount:,.2f}</p>
+        <p><strong>Shared with:</strong> {affected_list}</p>
+    </div>
+    <p>{uploader_name} has added a new shared expense. Check your dashboard to see your share!</p>
+    """
+    
+    send_email_notification(
+        subject=f"New Expense: {description}",
+        title="New Expense Alert",
+        body_content=body,
+        action_user=uploader_name
+    )
+
+def notify_payment_marked(
+    debtor: str,
+    uploader: str,
+    description: str,
+    amount: float
+) -> None:
+    """Send notification when a debt is marked as paid."""
+    users_cfg = st.secrets.get("users", {})
+    debtor_name = users_cfg.get(debtor, debtor)
+    uploader_name = users_cfg.get(uploader, uploader)
+    
+    body = f"""
+    <h2>✅ Payment Marked as Paid</h2>
+    <div class="info-box">
+        <p><strong>Description:</strong> {description}</p>
+        <p><strong>Amount:</strong> ${amount:,.2f}</p>
+        <p><strong>Paid by:</strong> {debtor_name}</p>
+        <p><strong>Awaiting approval from:</strong> {uploader_name}</p>
+    </div>
+    <p>{debtor_name} has marked a payment as completed. {uploader_name}, please review and approve this payment.</p>
+    """
+    
+    # Send to uploader who needs to approve
+    send_email_notification(
+        subject=f"Payment Pending Approval: {description}",
+        title="Payment Marked as Paid",
+        body_content=body,
+        action_user=debtor_name,
+        recipients=[get_user_email(uploader)]
+    )
+
+def notify_payment_approved(
+    debtor: str,
+    uploader: str,
+    description: str,
+    amount: float
+) -> None:
+    """Send notification when a payment is approved."""
+    users_cfg = st.secrets.get("users", {})
+    debtor_name = users_cfg.get(debtor, debtor)
+    uploader_name = users_cfg.get(uploader, uploader)
+    
+    body = f"""
+    <h2>🎉 Payment Approved!</h2>
+    <div class="info-box">
+        <p><strong>Description:</strong> {description}</p>
+        <p><strong>Amount:</strong> ${amount:,.2f}</p>
+        <p><strong>Approved by:</strong> {uploader_name}</p>
+    </div>
+    <p>Great news! {uploader_name} has approved your payment for "{description}". This transaction is now complete!</p>
+    """
+    
+    # Send to debtor who made the payment
+    send_email_notification(
+        subject=f"Payment Approved: {description}",
+        title="Payment Approved",
+        body_content=body,
+        action_user=uploader_name,
+        recipients=[get_user_email(debtor)]
+    )
 
 # How we present the share types in the UI vs. how we store them
 SHARE_TYPE_OPTIONS = {
@@ -396,6 +632,11 @@ def add_expense_and_create_debts(
             "with paycheck data to share the expense with. Add more users' paychecks "
             "or use 'Only me (no sharing)' option."
         )
+    
+    # Send email notification to all affected users
+    affected_users = [p for p in participants if p != uploader]
+    if affected_users:
+        notify_new_expense(uploader, description, total_amount, affected_users)
 
 
 def mark_debts_as_paid(current_user: str, debt_ids: List[str]) -> None:
@@ -440,6 +681,14 @@ def mark_debts_as_paid(current_user: str, debt_ids: List[str]) -> None:
 
         archive_row = [row_dict.get(col, "") for col in ARCHIVE_HEADERS]
         archive_ws.append_row(archive_row)
+        
+        # Send email notification to uploader
+        notify_payment_marked(
+            debtor=current_user,
+            uploader=str(items_df.loc[row_idx_df, "uploader"]),
+            description=str(items_df.loc[row_idx_df, "description"]),
+            amount=float(items_df.loc[row_idx_df, "amount_owed"])
+        )
 
 
 def approve_payments(current_user: str, archive_ids: List[str]) -> None:
@@ -469,6 +718,14 @@ def approve_payments(current_user: str, archive_ids: List[str]) -> None:
         archive_ws.update_cell(sheet_row, ARCHIVE_COL_INDEX["approved"], True)
         archive_ws.update_cell(sheet_row, ARCHIVE_COL_INDEX["approved_at"], now_iso)
         archive_ws.update_cell(sheet_row, ARCHIVE_COL_INDEX["approved_by"], current_user)
+        
+        # Send email notification to debtor
+        notify_payment_approved(
+            debtor=str(archive_df.loc[row_idx_df, "debtor"]),
+            uploader=current_user,
+            description=str(archive_df.loc[row_idx_df, "description"]),
+            amount=float(archive_df.loc[row_idx_df, "amount_owed"])
+        )
 
 
 # -------------------------------------------------------------------
