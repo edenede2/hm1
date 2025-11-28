@@ -326,6 +326,7 @@ def add_expense_and_create_debts(
 
     receipt_url = upload_receipt_file(uploaded_file, purchase_id)
 
+    rows_created = 0
     for debtor in participants:
         # Never create a row where someone "owes themselves"
         if debtor == uploader:
@@ -352,6 +353,14 @@ def add_expense_and_create_debts(
             "",     # paid_by
         ]
         items_ws.append_row(row)
+        rows_created += 1
+    
+    if rows_created == 0:
+        raise ValueError(
+            "No debt rows were created. This happens when there are no other users "
+            "with paycheck data to share the expense with. Add more users' paychecks "
+            "or use 'Only me (no sharing)' option."
+        )
 
 
 def mark_debts_as_paid(current_user: str, debt_ids: List[str]) -> None:
@@ -646,8 +655,10 @@ def page_add_expense(username: str):
                 )
                 st.success("Expense added and debts created.")
                 st.rerun()
-            except ValueError as e:
-                st.error(str(e))
+            except Exception as e:
+                st.error(f"Error creating expense: {str(e)}")
+                import traceback
+                st.error(traceback.format_exc())
 
 
 def page_approve(username: str):
