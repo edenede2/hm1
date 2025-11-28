@@ -491,7 +491,17 @@ def page_dashboard(username: str):
         my_debts = pd.DataFrame(columns=ITEMS_HEADERS)
         my_credits = pd.DataFrame(columns=ITEMS_HEADERS)
     else:
-        unpaid_mask = ~items_df["paid"].astype(bool)
+        # Handle various boolean representations from Google Sheets
+        def is_unpaid(val):
+            if pd.isna(val):
+                return True
+            if isinstance(val, bool):
+                return not val
+            if isinstance(val, str):
+                return val.lower() not in ['true', '1', 'yes']
+            return not bool(val)
+        
+        unpaid_mask = items_df["paid"].apply(is_unpaid)
         my_debts = items_df[
             (items_df["debtor"] == username) & unpaid_mask
         ]
@@ -661,6 +671,81 @@ def page_add_expense(username: str):
                 st.error(traceback.format_exc())
 
 
+def page_history(username: str):
+    st.header("Transaction History")
+    
+    items_df = load_items_df()
+    archive_df = load_archive_df()
+    
+    # Combine items and archive
+    if not items_df.empty and not archive_df.empty:
+        # Add source column
+        items_df["source"] = "Active"
+        archive_df["source"] = "Archive"
+        # Combine, using only columns that exist in items
+        combined_df = pd.concat([items_df, archive_df[ITEMS_HEADERS + ["source"]]], ignore_index=True)
+    elif not items_df.empty:
+        items_df["source"] = "Active"
+        combined_df = items_df
+    elif not archive_df.empty:
+        archive_df["source"] = "Archive"
+        combined_df = archive_df[ITEMS_HEADERS + ["source"]]
+    else:
+        st.write("No transaction history found.")
+        return
+    
+    # Filter options
+    col1, col2 = st.columns(2)
+    with col1:
+        filter_type = st.selectbox(
+            "Filter by",
+            ["All", "I uploaded", "I owe", "Others owe me"]
+        )
+    with col2:
+        show_paid = st.checkbox("Include paid items", value=True)
+    
+    # Apply filters
+    filtered_df = combined_df.copy()
+    
+    if filter_type == "I uploaded":
+        filtered_df = filtered_df[filtered_df["uploader"] == username]
+    elif filter_type == "I owe":
+        filtered_df = filtered_df[filtered_df["debtor"] == username]
+    elif filter_type == "Others owe me":
+        filtered_df = filtered_df[
+            (filtered_df["uploader"] == username) & 
+            (filtered_df["debtor"] != username)
+        ]
+    
+    if not show_paid:
+        def is_unpaid(val):
+            if pd.isna(val):
+                return True
+            if isinstance(val, bool):
+                return not val
+            if isinstance(val, str):
+                return val.lower() not in ['true', '1', 'yes']
+            return not bool(val)
+        filtered_df = filtered_df[filtered_df["paid"].apply(is_unpaid)]
+    
+    # Display
+    if filtered_df.empty:
+        st.write("No items match the selected filters.")
+    else:
+        display_cols = [
+            "source", "timestamp", "purchase_date", "uploader", "debtor",
+            "description", "amount_total", "amount_owed", "paid", "share_type"
+        ]
+        st.dataframe(
+            filtered_df[display_cols],
+            use_container_width=True,
+        )
+        
+        st.markdown(f"**Total items:** {len(filtered_df)}")
+        total_amount = filtered_df["amount_owed"].sum()
+        st.markdown(f"**Total amount:** {total_amount:,.2f}")
+
+
 def page_approve(username: str):
     st.header("Approve payments for expenses you uploaded")
 
@@ -668,11 +753,30 @@ def page_approve(username: str):
     if archive_df.empty:
         st.write("No payments waiting for approval.")
         return
+    
+    # Handle boolean values properly
+    def is_approved(val):
+        if pd.isna(val):
+            return False
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, str):
+            return val.lower() in ['true', '1', 'yes']
+        return bool(val)
+    
+    def is_paid(val):
+        if pd.isna(val):
+            return False
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, str):
+            return val.lower() in ['true', '1', 'yes']
+        return bool(val)
 
     pending = archive_df[
         (archive_df["uploader"] == username)
-        & (~archive_df["approved"].astype(bool))
-        & (archive_df["paid"].astype(bool))
+        & (~archive_df["approved"].apply(is_approved))
+        & (archive_df["paid"].apply(is_paid))
     ]
 
     if pending.empty:
@@ -737,7 +841,7 @@ def main():
     st.sidebar.header("Navigation")
     page = st.sidebar.radio(
         "Go to",
-        ["Dashboard", "Update paychecks", "Add expense", "Approve payments"],
+        ["Dashboard", "Update paychecks", "Add expense", "Approve payments", "History"],
     )
 
     if page == "Dashboard":
@@ -748,6 +852,8 @@ def main():
         page_add_expense(username)
     elif page == "Approve payments":
         page_approve(username)
+    elif page == "History":
+        page_history(username)
 
 
 if __name__ == "__main__":
