@@ -265,6 +265,47 @@ def notify_new_expense(
         action_user=uploader_name
     )
 
+def notify_multiple_expenses(
+    uploader: str,
+    expenses: List[Dict],
+    affected_users: List[str]
+) -> None:
+    """Send notification when multiple expenses are added."""
+    users_cfg = st.secrets.get("users", {})
+    uploader_name = users_cfg.get(uploader, uploader)
+    
+    affected_names = [users_cfg.get(u, u) for u in affected_users]
+    affected_list = ", ".join(affected_names)
+    
+    total_all = sum(exp['amount'] for exp in expenses)
+    
+    # Build expense list
+    expense_items = ""
+    for exp in expenses:
+        expense_items += f"<li><strong>{exp['description']}</strong> - ${exp['amount']:,.2f}</li>"
+    
+    body = f"""
+    <h2>💸 Multiple Expenses Added</h2>
+    <p>{uploader_name} has added {len(expenses)} new shared expenses:</p>
+    <div class="info-box">
+        <ul style="margin: 10px 0;">
+            {expense_items}
+        </ul>
+        <p style="border-top: 2px solid #667eea; padding-top: 10px; margin-top: 10px;">
+            <strong>Total Amount:</strong> ${total_all:,.2f}
+        </p>
+        <p><strong>Shared with:</strong> {affected_list}</p>
+    </div>
+    <p>Check your dashboard to see your share of each expense!</p>
+    """
+    
+    send_email_notification(
+        subject=f"{len(expenses)} New Expenses Added",
+        title="Multiple Expenses Alert",
+        body_content=body,
+        action_user=uploader_name
+    )
+
 def notify_payment_marked(
     debtor: str,
     uploader: str,
@@ -663,10 +704,8 @@ def add_expense_and_create_debts(
             "or use 'Only me (no sharing)' option."
         )
     
-    # Send email notification to all affected users
-    affected_users = [p for p in participants if p != uploader]
-    if affected_users:
-        notify_new_expense(uploader, description, total_amount, affected_users)
+    # Note: Email notification is handled by the caller (either single or batch)
+    # This allows batch operations to send one consolidated email
 
 
 def delete_expense_debts(current_user: str, purchase_id: str) -> None:
@@ -1025,49 +1064,172 @@ def page_paychecks(username: str):
 
 def page_add_expense(username: str):
     emoji = get_random_emoji(EXPENSE_EMOJIS)
-    st.header(f"{emoji} Add a New Expense")
-    st.markdown("*Create a new shared expense and split it with your household*")
-
-    description = st.text_input("Description", "")
-    total_amount = st.number_input(
-        "Total amount",
-        min_value=0.0,
-        step=1.0,
-    )
-    purchase_date = st.date_input(
-        "Purchase date",
-        value=datetime.now().date(),
-    )
-    share_label = st.radio(
-        "How should this expense be shared?",
-        list(SHARE_TYPE_OPTIONS.keys()),
-        index=1,
-    )
-    receipt_file = st.file_uploader(
-        "Optional receipt (image/PDF)",
-        type=["png", "jpg", "jpeg", "pdf"],
-    )
-
-    if st.button("Create debts"):
-        if not description.strip():
-            st.error("Please enter a description.")
-        elif total_amount <= 0:
-            st.error("Amount must be positive.")
+    st.header(f"{emoji} Add New Expenses")
+    st.markdown("*Create one or more shared expenses and split them with your household*")
+    
+    # Initialize session state for expenses
+    if "expenses" not in st.session_state:
+        st.session_state.expenses = [{"description": "", "amount": 0.0, "date": datetime.now().date()}]
+    
+    # Shared settings for all expenses
+    st.subheader("⚙️ Shared Settings")
+    col1, col2 = st.columns(2)
+    with col1:
+        share_label = st.radio(
+            "How should expenses be shared?",
+            list(SHARE_TYPE_OPTIONS.keys()),
+            index=1,
+            help="This setting applies to all expenses below"
+        )
+    with col2:
+        receipt_file = st.file_uploader(
+            "Optional receipt (image/PDF)",
+            type=["png", "jpg", "jpeg", "pdf"],
+            help="Applies to the first expense only"
+        )
+    
+    st.divider()
+    
+    # Dynamic expense entries
+    st.subheader("📝 Expenses")
+    
+    expenses_to_remove = []
+    for idx, expense in enumerate(st.session_state.expenses):
+        col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+        
+        with col1:
+            expense["description"] = st.text_input(
+                f"Description #{idx+1}",
+                value=expense["description"],
+                key=f"desc_{idx}",
+                placeholder="e.g., Groceries, Utilities, etc."
+            )
+        
+        with col2:
+            expense["amount"] = st.number_input(
+                f"Amount #{idx+1}",
+                min_value=0.0,
+                value=expense["amount"],
+                step=1.0,
+                key=f"amount_{idx}"
+            )
+        
+        with col3:
+            expense["date"] = st.date_input(
+                f"Date #{idx+1}",
+                value=expense["date"],
+                key=f"date_{idx}"
+            )
+        
+        with col4:
+            st.write("")
+            st.write("")
+            if len(st.session_state.expenses) > 1:
+                if st.button("🗑️", key=f"remove_{idx}", help="Remove this expense"):
+                    expenses_to_remove.append(idx)
+    
+    # Remove expenses marked for deletion
+    for idx in sorted(expenses_to_remove, reverse=True):
+        st.session_state.expenses.pop(idx)
+        st.rerun()
+    
+    # Add more expense button
+    col1, col2, col3 = st.columns([1, 1, 2])
+    with col1:
+        if st.button("➕ Add Another Expense", use_container_width=True):
+            st.session_state.expenses.append({"description": "", "amount": 0.0, "date": datetime.now().date()})
+            st.rerun()
+    
+    with col2:
+        if st.button("🔄 Clear All", use_container_width=True):
+            st.session_state.expenses = [{"description": "", "amount": 0.0, "date": datetime.now().date()}]
+            st.rerun()
+    
+    st.divider()
+    
+    # Summary
+    valid_expenses = [e for e in st.session_state.expenses if e["description"].strip() and e["amount"] > 0]
+    total_amount = sum(e["amount"] for e in valid_expenses)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("📊 Total Expenses", len(valid_expenses))
+    with col2:
+        st.metric("💰 Total Amount", f"${total_amount:,.2f}")
+    
+    # Create debts button
+    if st.button("✅ Create All Debts", type="primary", use_container_width=True):
+        if not valid_expenses:
+            st.error("Please add at least one expense with a description and positive amount.")
         else:
             share_type = SHARE_TYPE_OPTIONS[share_label]
+            errors = []
+            success_count = 0
+            all_affected_users = set()
+            expense_summaries = []
+            
             try:
-                add_expense_and_create_debts(
-                    uploader=username,
-                    description=description.strip(),
-                    total_amount=total_amount,
-                    share_type=share_type,
-                    purchase_date=purchase_date,
-                    uploaded_file=receipt_file,
-                )
-                st.success("Expense added and debts created! 🎉")
+                for idx, expense in enumerate(valid_expenses):
+                    try:
+                        # Only pass receipt for first expense
+                        file_to_upload = receipt_file if idx == 0 else None
+                        
+                        # Track affected users before creating
+                        income_means = compute_income_means()
+                        all_usernames = list(st.secrets["users"].keys())
+                        participants = [u for u in all_usernames if u in income_means]
+                        
+                        if share_type == "relative_all":
+                            pass
+                        elif share_type == "relative_others":
+                            participants = [u for u in participants if u != username]
+                        
+                        affected = [p for p in participants if p != username]
+                        all_affected_users.update(affected)
+                        
+                        add_expense_and_create_debts(
+                            uploader=username,
+                            description=expense["description"].strip(),
+                            total_amount=expense["amount"],
+                            share_type=share_type,
+                            purchase_date=expense["date"],
+                            uploaded_file=file_to_upload,
+                        )
+                        success_count += 1
+                        expense_summaries.append({
+                            "description": expense["description"].strip(),
+                            "amount": expense["amount"]
+                        })
+                    except Exception as e:
+                        errors.append(f"Error with '{expense['description']}': {str(e)}")
+                
+                # Send email notification
+                if all_affected_users:
+                    if success_count > 1:
+                        # Send consolidated email for multiple expenses
+                        notify_multiple_expenses(username, expense_summaries, list(all_affected_users))
+                    elif success_count == 1:
+                        # Send single expense email
+                        notify_new_expense(
+                            username,
+                            expense_summaries[0]["description"],
+                            expense_summaries[0]["amount"],
+                            list(all_affected_users)
+                        )
+                
+                if errors:
+                    st.warning(f"Created {success_count} expenses with {len(errors)} errors:")
+                    for error in errors:
+                        st.error(error)
+                else:
+                    st.success(f"🎉 Successfully created {success_count} expense(s) and debts!")
+                
+                # Reset form
+                st.session_state.expenses = [{"description": "", "amount": 0.0, "date": datetime.now().date()}]
                 st.rerun()
+                
             except Exception as e:
-                st.error(f"Error creating expense: {str(e)}")
+                st.error(f"Error creating expenses: {str(e)}")
                 import traceback
                 st.code(traceback.format_exc(), language="python")
 
