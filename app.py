@@ -612,30 +612,27 @@ def page_paychecks(username: str):
 def page_add_expense(username: str):
     st.header("Add a new expense")
 
-    with st.form("add_expense_form"):
-        description = st.text_input("Description", "")
-        total_amount = st.number_input(
-            "Total amount",
-            min_value=0.0,
-            step=1.0,
-        )
-        purchase_date = st.date_input(
-            "Purchase date",
-            value=datetime.now().date(),
-        )
-        share_label = st.radio(
-            "How should this expense be shared?",
-            list(SHARE_TYPE_OPTIONS.keys()),
-            index=1,
-        )
-        receipt_file = st.file_uploader(
-            "Optional receipt (image/PDF)",
-            type=["png", "jpg", "jpeg", "pdf"],
-        )
+    description = st.text_input("Description", "")
+    total_amount = st.number_input(
+        "Total amount",
+        min_value=0.0,
+        step=1.0,
+    )
+    purchase_date = st.date_input(
+        "Purchase date",
+        value=datetime.now().date(),
+    )
+    share_label = st.radio(
+        "How should this expense be shared?",
+        list(SHARE_TYPE_OPTIONS.keys()),
+        index=1,
+    )
+    receipt_file = st.file_uploader(
+        "Optional receipt (image/PDF)",
+        type=["png", "jpg", "jpeg", "pdf"],
+    )
 
-        submitted = st.form_submit_button("Create debts")
-
-    if submitted:
+    if st.button("Create debts"):
         if not description.strip():
             st.error("Please enter a description.")
         elif total_amount <= 0:
