@@ -214,7 +214,7 @@ def upload_receipt_file(uploaded_file, purchase_id: str) -> Optional[str]:
     Upload receipt to Drive, return a sharing URL (or None).
 
     If drive_receipts_folder_id is not configured or upload fails,
-    returns None and shows a warning instead of crashing.
+    returns None instead of crashing.
     """
     if uploaded_file is None:
         return None
@@ -222,11 +222,7 @@ def upload_receipt_file(uploaded_file, purchase_id: str) -> Optional[str]:
     # Get folder ID from secrets
     folder_id = st.secrets["app"].get("drive_receipts_folder_id", "").strip()
     if not folder_id:
-        # Attachments disabled – just skip
-        st.warning(
-            "Receipt upload is disabled (no drive_receipts_folder_id configured). "
-            "The expense was created without a stored receipt."
-        )
+        # Attachments disabled – just skip silently
         return None
 
     _, drive_service, _ = get_clients()
