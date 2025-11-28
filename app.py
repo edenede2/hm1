@@ -1,5 +1,6 @@
 import io
 import uuid
+import random
 from datetime import datetime, timezone, date
 from typing import Dict, List, Optional
 
@@ -53,6 +54,41 @@ ARCHIVE_HEADERS = ITEMS_HEADERS + [
 
 ITEMS_COL_INDEX = {name: idx + 1 for idx, name in enumerate(ITEMS_HEADERS)}
 ARCHIVE_COL_INDEX = {name: idx + 1 for idx, name in enumerate(ARCHIVE_HEADERS)}
+
+# Random greetings and emojis
+GREETINGS = [
+    "Welcome back, {name}! 🎉",
+    "Hello, {name}! 💰",
+    "Hey there, {name}! 👋",
+    "Good to see you, {name}! ✨",
+    "Hi {name}! 🌟",
+    "Greetings, {name}! 🚀",
+    "What's up, {name}? 💫",
+    "Nice to have you here, {name}! 🎊",
+]
+
+DASHBOARD_EMOJIS = ["💸", "💰", "💳", "🏦", "💵", "💴", "💶", "💷"]
+PAYCHECK_EMOJIS = ["💼", "💵", "💰", "📊", "💳", "🏦"]
+EXPENSE_EMOJIS = ["🛒", "🛍️", "🧾", "💳", "📝", "✍️"]
+APPROVE_EMOJIS = ["✅", "👍", "✔️", "👌", "🎯"]
+HISTORY_EMOJIS = ["📜", "📋", "📊", "📈", "📁", "🗂️"]
+
+NO_DEBT_MESSAGES = [
+    "You're all clear! 🎉",
+    "Debt-free zone! 🌈",
+    "Nothing to see here! ✨",
+    "Clean slate! 🧼",
+    "All squared away! 🔲",
+    "You're golden! 🌟",
+]
+
+def get_random_greeting(display_name: str) -> str:
+    """Get a random personalized greeting."""
+    return random.choice(GREETINGS).format(name=display_name)
+
+def get_random_emoji(emoji_list: List[str]) -> str:
+    """Get a random emoji from a list."""
+    return random.choice(emoji_list)
 
 # How we present the share types in the UI vs. how we store them
 SHARE_TYPE_OPTIONS = {
@@ -466,8 +502,14 @@ def require_login() -> str:
         st.stop()
 
     display_name = users_cfg[username]
-    st.sidebar.markdown(f"**Logged in as** {display_name}  \n`{email}`")
-    if st.sidebar.button("Log out"):
+    
+    # Show personalized greeting in sidebar
+    greeting = get_random_greeting(display_name)
+    st.sidebar.markdown(f"### {greeting}")
+    st.sidebar.markdown(f"**{display_name}**  \n`{email}`")
+    st.sidebar.markdown("---")
+    
+    if st.sidebar.button("🚪 Log out"):
         st.logout()
         st.stop()
 
@@ -479,7 +521,8 @@ def require_login() -> str:
 # -------------------------------------------------------------------
 
 def page_dashboard(username: str):
-    st.header("Dashboard")
+    emoji = get_random_emoji(DASHBOARD_EMOJIS)
+    st.header(f"{emoji} Dashboard")
 
     income_means = compute_income_means()
     items_df = load_items_df()
@@ -516,10 +559,10 @@ def page_dashboard(username: str):
     col2.metric("I owe others", f"{total_owe:,.2f}")
     col3.metric("Others owe me", f"{total_owed_to_me:,.2f}")
 
-    st.subheader("Debts I owe")
+    st.subheader("💸 Debts I owe")
 
     if my_debts.empty:
-        st.write("You don't currently owe anything 🎉")
+        st.success(random.choice(NO_DEBT_MESSAGES))
     else:
         st.dataframe(
             my_debts[["id", "uploader", "description", "amount_owed", "purchase_date", "timestamp"]],
@@ -563,10 +606,10 @@ def page_dashboard(username: str):
                     )
                     st.rerun()
 
-    st.subheader("Debts others owe me")
+    st.subheader("💰 Debts others owe me")
 
     if my_credits.empty:
-        st.write("No outstanding debts from others.")
+        st.info("No one owes you money right now. Time to treat yourself! 🎁")
     else:
         st.dataframe(
             my_credits[["id", "debtor", "description", "amount_owed", "purchase_date", "timestamp"]],
@@ -575,7 +618,9 @@ def page_dashboard(username: str):
 
 
 def page_paychecks(username: str):
-    st.header("My paychecks")
+    emoji = get_random_emoji(PAYCHECK_EMOJIS)
+    st.header(f"{emoji} My Paychecks")
+    st.markdown("*Keep your income info updated for accurate expense sharing*")
 
     df = load_paychecks_df()
     row = None
@@ -624,7 +669,9 @@ def page_paychecks(username: str):
 
 
 def page_add_expense(username: str):
-    st.header("Add a new expense")
+    emoji = get_random_emoji(EXPENSE_EMOJIS)
+    st.header(f"{emoji} Add a New Expense")
+    st.markdown("*Create a new shared expense and split it with your household*")
 
     description = st.text_input("Description", "")
     total_amount = st.number_input(
@@ -671,7 +718,9 @@ def page_add_expense(username: str):
 
 
 def page_history(username: str):
-    st.header("Transaction History")
+    emoji = get_random_emoji(HISTORY_EMOJIS)
+    st.header(f"{emoji} Transaction History")
+    st.markdown("*View all your household transactions in one place*")
     
     items_df = load_items_df()
     archive_df = load_archive_df()
@@ -729,7 +778,7 @@ def page_history(username: str):
     
     # Display
     if filtered_df.empty:
-        st.write("No items match the selected filters.")
+        st.info("No items match the selected filters. Try adjusting your filters! 🔍")
     else:
         display_cols = [
             "source", "timestamp", "purchase_date", "uploader", "debtor",
@@ -740,17 +789,22 @@ def page_history(username: str):
             use_container_width=True,
         )
         
-        st.markdown(f"**Total items:** {len(filtered_df)}")
-        total_amount = filtered_df["amount_owed"].sum()
-        st.markdown(f"**Total amount:** {total_amount:,.2f}")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("📊 Total Items", len(filtered_df))
+        with col2:
+            total_amount = filtered_df["amount_owed"].sum()
+            st.metric("💵 Total Amount", f"{total_amount:,.2f}")
 
 
 def page_approve(username: str):
-    st.header("Approve payments for expenses you uploaded")
+    emoji = get_random_emoji(APPROVE_EMOJIS)
+    st.header(f"{emoji} Approve Payments")
+    st.markdown("*Review and approve payments for expenses you uploaded*")
 
     archive_df = load_archive_df()
     if archive_df.empty:
-        st.write("No payments waiting for approval.")
+        st.info("No payments waiting for approval yet. All clear! ✨")
         return
     
     # Handle boolean values properly
@@ -779,10 +833,10 @@ def page_approve(username: str):
     ]
 
     if pending.empty:
-        st.write("No payments waiting for your approval.")
+        st.success("All caught up! No payments waiting for your approval. 🎉")
         return
 
-    st.write("These payments were marked as paid by other users. You can approve them:")
+    st.info("💡 These payments were marked as paid by other users. Review and approve them below:")
 
     st.dataframe(
         pending[
