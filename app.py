@@ -635,14 +635,12 @@ def page_add_expense(username: str):
 
         submitted = st.form_submit_button("Create debts")
 
-        if submitted:
-            if not description.strip():
-                st.error("Please enter a description.")
-                return
-            if total_amount <= 0:
-                st.error("Amount must be positive.")
-                return
-
+    if submitted:
+        if not description.strip():
+            st.error("Please enter a description.")
+        elif total_amount <= 0:
+            st.error("Amount must be positive.")
+        else:
             share_type = SHARE_TYPE_OPTIONS[share_label]
             try:
                 add_expense_and_create_debts(
@@ -653,12 +651,10 @@ def page_add_expense(username: str):
                     purchase_date=purchase_date,
                     uploaded_file=receipt_file,
                 )
+                st.success("Expense added and debts created.")
+                st.rerun()
             except ValueError as e:
                 st.error(str(e))
-                return
-
-            st.success("Expense added and debts created.")
-            st.rerun()
 
 
 def page_approve(username: str):
