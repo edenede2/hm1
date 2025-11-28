@@ -68,6 +68,10 @@ GREETINGS = [
     "Greetings, {name}! 🚀",
     "What's up, {name}? 💫",
     "Nice to have you here, {name}! 🎊",
+    "Wonderful to see you, {name}! 🌺",
+    "Great day to you, {name}! ☀️",
+    "Looking good, {name}! 🌸",
+    "You're awesome, {name}! 🎯",
 ]
 
 DASHBOARD_EMOJIS = ["💸", "💰", "💳", "🏦", "💵", "💴", "💶", "💷"]
@@ -76,18 +80,165 @@ EXPENSE_EMOJIS = ["🛒", "🛍️", "🧾", "💳", "📝", "✍️"]
 APPROVE_EMOJIS = ["✅", "👍", "✔️", "👌", "🎯"]
 HISTORY_EMOJIS = ["📜", "📋", "📊", "📈", "📁", "🗂️"]
 
+# Positive psychology messages for different sections
+DASHBOARD_INTRO = [
+    "Great job keeping track of your finances! 🌟",
+    "You're doing amazing with your household management! 💪",
+    "Financial transparency builds stronger relationships! 🤝",
+    "Every payment brings you closer to financial freedom! 🦋",
+    "You're making smart money moves today! 🎯",
+    "Your financial awareness is impressive! 🌈",
+    "Taking control of expenses shows real maturity! 🌱",
+    "You're building healthy financial habits! ✨",
+    "Managing together makes everything easier! 🏡",
+    "Your dedication to fairness is admirable! 💎",
+]
+
 NO_DEBT_MESSAGES = [
-    "You're all clear! 🎉",
-    "Debt-free zone! 🌈",
-    "Nothing to see here! ✨",
-    "Clean slate! 🧼",
-    "All squared away! 🔲",
-    "You're golden! 🌟",
+    "You're all clear! Time to celebrate! 🎉",
+    "Debt-free zone! You're crushing it! 🌈",
+    "Nothing owed! You're financially free! ✨",
+    "Clean slate! You're doing fantastic! 🧼",
+    "All squared away! Keep up the great work! 🔲",
+    "You're golden! Enjoy this moment! 🌟",
+    "Perfectly balanced! You're a star! ⭐",
+    "Zero debts! You're rocking this! 🚀",
+    "All paid up! You're amazing! 🎊",
+    "No obligations! You're ahead of the game! 🏆",
+    "Clear account! You should feel proud! 💫",
+    "Nothing pending! You're on top of it! 🎯",
+]
+
+NO_CREDITS_MESSAGES = [
+    "No one owes you money right now. Time to treat yourself! 🎁",
+    "All settled! Your generosity creates great relationships! 💝",
+    "Everyone's caught up! You're fostering trust! 🤝",
+    "Nothing pending! You make managing easy! 🌸",
+    "All clear! Your patience is appreciated! 🌺",
+    "Fully reconciled! You're creating harmony! 🎵",
+    "No debts owed! You're building strong bonds! 💪",
+    "Everyone's square! You're a great household partner! 🏡",
+]
+
+PAYCHECK_INTRO = [
+    "Keeping income updated ensures fair sharing! 📊",
+    "Your transparency makes everything work smoothly! 🌟",
+    "Regular updates show responsibility! 💼",
+    "Accurate data creates trust and fairness! 🤝",
+    "You're contributing to household harmony! 🎵",
+    "Income tracking leads to better planning! 📈",
+    "Your diligence is the key to success! 🔑",
+    "Staying current shows you care! 💙",
+]
+
+EXPENSE_INTRO = [
+    "Sharing expenses brings everyone closer! 🤝",
+    "You're making fair sharing easy! 🌟",
+    "Every entry helps maintain balance! ⚖️",
+    "Your honesty creates trust! 💎",
+    "Recording expenses shows integrity! ✨",
+    "You're building financial transparency! 🌈",
+    "Tracking together makes life simpler! 🧘",
+    "Your contribution keeps things fair! 🎯",
+]
+
+EXPENSE_SUCCESS = [
+    "Expense added successfully! You're staying organized! 🎉",
+    "Great job tracking that expense! 🌟",
+    "Added! Your diligence is paying off! 💪",
+    "Recorded! You're building good habits! 🌱",
+    "Done! Financial clarity feels good! ✨",
+    "Success! You're making smart moves! 🚀",
+    "Added! Transparency creates trust! 🤝",
+    "Saved! You're doing amazing! 💫",
+]
+
+PAYMENT_MARKED_MESSAGES = [
+    "Payment marked! You're being responsible! 👏",
+    "Great job staying on top of debts! 🌟",
+    "Marked as paid! You're building trust! 🤝",
+    "Awesome! Your reliability is admirable! 💎",
+    "Payment noted! You're doing the right thing! ✨",
+    "Well done! Your integrity shines! 🌈",
+    "Marked! You're creating positive relationships! 💝",
+    "Recorded! Your commitment is inspiring! 🚀",
+]
+
+APPROVAL_INTRO = [
+    "Your review helps maintain household harmony! 🏡",
+    "Approving payments builds mutual trust! 🤝",
+    "Your confirmation creates peace of mind! 💙",
+    "Quick reviews keep relationships strong! 💪",
+    "You're the final piece of the puzzle! 🧩",
+    "Your approval validates their effort! 🌟",
+    "Checking in shows you care! 💝",
+    "Your diligence protects everyone! 🛡️",
+]
+
+NO_APPROVALS_MESSAGES = [
+    "All caught up! No payments need your attention! ✨",
+    "Nothing to approve! Everyone's in sync! 🎵",
+    "All clear! Your household is running smoothly! 🌊",
+    "No pending approvals! You're all set! 🎯",
+    "Everything's approved! Great teamwork! 🤝",
+    "Nothing waiting! You're on top of things! 🏔️",
+    "All processed! The system works! ⚙️",
+    "Zero pending! You're doing great! 🌟",
+]
+
+APPROVAL_SUCCESS = [
+    "Payment approved! You're building trust! 🤝",
+    "Approved! Financial harmony achieved! 🎵",
+    "Confirmed! You're a great partner! 💝",
+    "Done! Your fairness is appreciated! 🌟",
+    "Approved! Relationships strengthened! 💪",
+    "Success! You're creating positivity! ✨",
+    "Confirmed! Trust grows with every approval! 🌱",
+    "Approved! You're making a difference! 🌈",
+]
+
+HISTORY_INTRO = [
+    "Looking back helps you move forward! 🚀",
+    "Your history shows your growth! 📈",
+    "Transparency creates accountability! 📊",
+    "Every transaction tells your story! 📖",
+    "Reviewing builds awareness! 🧠",
+    "Your records show responsibility! 💼",
+    "History reveals your progress! 🌱",
+    "Past data guides future success! 🎯",
+]
+
+NO_HISTORY_MESSAGES = [
+    "No transaction history yet. Start fresh! 🌱",
+    "Empty canvas! Your journey begins now! 🎨",
+    "Clean slate! Build something great! ✨",
+    "No history yet! Every journey starts somewhere! 🚀",
+    "Fresh start! Your story begins today! 📖",
+]
+
+DELETE_SUCCESS = [
+    "Deleted successfully! Staying organized! 🗑️",
+    "Removed! You're maintaining clarity! ✨",
+    "Deleted! Clean records feel good! 🧼",
+    "Gone! You're keeping things tidy! 🌟",
+    "Removed! Accuracy matters! 🎯",
+    "Deleted! You're in control! 💪",
+]
+
+NO_EXPENSES_MESSAGES = [
+    "You haven't created any expenses yet. Ready to start? 🌱",
+    "No expenses recorded! Your journey begins! 🚀",
+    "Clean slate! Add your first expense! ✨",
+    "Empty list! Time to begin tracking! 📝",
 ]
 
 def get_random_greeting(display_name: str) -> str:
     """Get a random personalized greeting."""
     return random.choice(GREETINGS).format(name=display_name)
+
+def get_random_message(message_list: List[str]) -> str:
+    """Get a random message from a list."""
+    return random.choice(message_list)
 
 def get_random_emoji(emoji_list: List[str]) -> str:
     """Get a random emoji from a list."""
@@ -882,6 +1033,7 @@ def require_login() -> str:
 def page_dashboard(username: str):
     emoji = get_random_emoji(DASHBOARD_EMOJIS)
     st.header(f"{emoji} Dashboard")
+    st.info(get_random_message(DASHBOARD_INTRO))
 
     income_means = compute_income_means()
     items_df = load_items_df()
@@ -921,7 +1073,7 @@ def page_dashboard(username: str):
     st.subheader("💸 Debts I owe")
 
     if my_debts.empty:
-        st.success(random.choice(NO_DEBT_MESSAGES))
+        st.success(get_random_message(NO_DEBT_MESSAGES))
     else:
         st.dataframe(
             my_debts[["id", "uploader", "description", "amount_owed", "purchase_date", "timestamp"]],
@@ -959,16 +1111,14 @@ def page_dashboard(username: str):
                     st.warning("Select at least one item.")
                 else:
                     mark_debts_as_paid(username, selected_ids)
-                    st.success(
-                        "Marked as paid and copied to the archive "
-                        "(pending approval from the uploader)."
-                    )
+                    st.success(get_random_message(PAYMENT_MARKED_MESSAGES))
+                    st.info("Copied to archive and pending approval from the uploader.")
                     st.rerun()
 
     st.subheader("💰 Debts others owe me")
 
     if my_credits.empty:
-        st.info("No one owes you money right now. Time to treat yourself! 🎁")
+        st.info(get_random_message(NO_CREDITS_MESSAGES))
     else:
         st.dataframe(
             my_credits[["id", "debtor", "description", "amount_owed", "purchase_date", "timestamp"]],
@@ -982,7 +1132,7 @@ def page_dashboard(username: str):
     my_expenses = items_df[items_df["uploader"] == username] if not items_df.empty else pd.DataFrame()
     
     if my_expenses.empty:
-        st.info("You haven't created any expenses yet.")
+        st.info(get_random_message(NO_EXPENSES_MESSAGES))
     else:
         # Group by purchase_id to show unique expenses
         expense_groups = my_expenses.groupby("purchase_id").agg({
@@ -1032,7 +1182,7 @@ def page_dashboard(username: str):
                         for error in errors:
                             st.error(error)
                     else:
-                        st.success(f"🎉 Successfully deleted {deleted_count} expense(s)!")
+                        st.success(f"{get_random_message(DELETE_SUCCESS)} Deleted {deleted_count} expense(s)!")
                     
                     st.rerun()
         
@@ -1050,7 +1200,7 @@ def page_dashboard(username: str):
                 if st.button("🗑️", key=f"delete_{expense['purchase_id']}", help="Delete this expense"):
                     try:
                         delete_expense_debts(username, expense["purchase_id"])
-                        st.success(f"Deleted expense: {expense['description']}")
+                        st.success(f"{get_random_message(DELETE_SUCCESS)} ({expense['description']})")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error deleting expense: {str(e)}")
@@ -1060,7 +1210,7 @@ def page_dashboard(username: str):
 def page_paychecks(username: str):
     emoji = get_random_emoji(PAYCHECK_EMOJIS)
     st.header(f"{emoji} My Paychecks")
-    st.markdown("*Keep your income info updated for accurate expense sharing*")
+    st.info(get_random_message(PAYCHECK_INTRO))
 
     df = load_paychecks_df()
     row = None
@@ -1111,7 +1261,7 @@ def page_paychecks(username: str):
 def page_add_expense(username: str):
     emoji = get_random_emoji(EXPENSE_EMOJIS)
     st.header(f"{emoji} Add New Expenses")
-    st.markdown("*Create one or more shared expenses and split them with your household*")
+    st.info(get_random_message(EXPENSE_INTRO))
     
     # Initialize session state for expenses
     if "expenses" not in st.session_state:
@@ -1268,7 +1418,7 @@ def page_add_expense(username: str):
                     for error in errors:
                         st.error(error)
                 else:
-                    st.success(f"🎉 Successfully created {success_count} expense(s) and debts!")
+                    st.success(f"{get_random_message(EXPENSE_SUCCESS)} Created {success_count} expense(s)!")
                 
                 # Reset form
                 st.session_state.expenses = [{"description": "", "amount": 0.0, "date": datetime.now().date()}]
@@ -1283,7 +1433,7 @@ def page_add_expense(username: str):
 def page_history(username: str):
     emoji = get_random_emoji(HISTORY_EMOJIS)
     st.header(f"{emoji} Transaction History")
-    st.markdown("*View all your household transactions in one place*")
+    st.info(get_random_message(HISTORY_INTRO))
     
     items_df = load_items_df()
     archive_df = load_archive_df()
@@ -1302,7 +1452,7 @@ def page_history(username: str):
         archive_df["source"] = "Archive"
         combined_df = archive_df[ITEMS_HEADERS + ["source"]]
     else:
-        st.write("No transaction history found.")
+        st.info(get_random_message(NO_HISTORY_MESSAGES))
         return
     
     # Filter options
@@ -1363,11 +1513,11 @@ def page_history(username: str):
 def page_approve(username: str):
     emoji = get_random_emoji(APPROVE_EMOJIS)
     st.header(f"{emoji} Approve Payments")
-    st.markdown("*Review and approve payments for expenses you uploaded*")
+    st.info(get_random_message(APPROVAL_INTRO))
 
     archive_df = load_archive_df()
     if archive_df.empty:
-        st.info("No payments waiting for approval yet. All clear! ✨")
+        st.success(get_random_message(NO_APPROVALS_MESSAGES))
         return
     
     # Handle boolean values properly
@@ -1396,7 +1546,7 @@ def page_approve(username: str):
     ]
 
     if pending.empty:
-        st.success("All caught up! No payments waiting for your approval. 🎉")
+        st.success(get_random_message(NO_APPROVALS_MESSAGES))
         return
 
     st.info("💡 These payments were marked as paid by other users. Review and approve them below:")
@@ -1443,7 +1593,7 @@ def page_approve(username: str):
                 return
 
             approve_payments(username, selected_ids)
-            st.success("Selected payments approved.")
+            st.success(get_random_message(APPROVAL_SUCCESS))
             st.rerun()
 
 
