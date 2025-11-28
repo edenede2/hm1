@@ -326,6 +326,36 @@ def notify_payment_approved(
         recipients=[get_user_email(debtor)]
     )
 
+def notify_expense_deleted(
+    uploader: str,
+    description: str,
+    total_amount: float,
+    affected_users: List[str]
+) -> None:
+    """Send notification when an expense is deleted."""
+    users_cfg = st.secrets.get("users", {})
+    uploader_name = users_cfg.get(uploader, uploader)
+    
+    affected_names = [users_cfg.get(u, u) for u in affected_users]
+    affected_list = ", ".join(affected_names)
+    
+    body = f"""
+    <h2>🗑️ Expense Deleted</h2>
+    <div class="info-box">
+        <p><strong>Description:</strong> {description}</p>
+        <p><strong>Total Amount:</strong> ${total_amount:,.2f}</p>
+        <p><strong>Previously shared with:</strong> {affected_list}</p>
+    </div>
+    <p>{uploader_name} has deleted this expense. All associated debts have been removed.</p>
+    """
+    
+    send_email_notification(
+        subject=f"Expense Deleted: {description}",
+        title="Expense Removed",
+        body_content=body,
+        action_user=uploader_name
+    )
+
 # How we present the share types in the UI vs. how we store them
 SHARE_TYPE_OPTIONS = {
     "Only me (no sharing)": "self",
@@ -639,6 +669,39 @@ def add_expense_and_create_debts(
         notify_new_expense(uploader, description, total_amount, affected_users)
 
 
+def delete_expense_debts(current_user: str, purchase_id: str) -> None:
+    """Delete all debt rows associated with a purchase_id (only if current_user is the uploader)."""
+    _, _, spreadsheet = get_clients()
+    items_ws = get_or_create_worksheet(spreadsheet, ITEMS_SHEET, ITEMS_HEADERS)
+    
+    items_df = load_items_df()
+    if items_df.empty:
+        return
+    
+    # Get all rows with this purchase_id
+    matching_rows = items_df[items_df["purchase_id"] == purchase_id]
+    if matching_rows.empty:
+        return
+    
+    # Verify current user is the uploader
+    uploader = str(matching_rows.iloc[0]["uploader"])
+    if uploader != current_user:
+        raise ValueError("You can only delete expenses that you created.")
+    
+    # Get info for email notification
+    description = str(matching_rows.iloc[0]["description"])
+    total_amount = float(matching_rows.iloc[0]["amount_total"])
+    affected_users = list(matching_rows["debtor"].unique())
+    
+    # Delete rows in reverse order to maintain correct indices
+    for idx in sorted(matching_rows.index, reverse=True):
+        sheet_row = idx + 2  # +2 for header row and 0-indexing
+        items_ws.delete_rows(sheet_row)
+    
+    # Send email notification
+    if affected_users:
+        notify_expense_deleted(current_user, description, total_amount, affected_users)
+
 def mark_debts_as_paid(current_user: str, debt_ids: List[str]) -> None:
     if not debt_ids:
         return
@@ -872,6 +935,41 @@ def page_dashboard(username: str):
             my_credits[["id", "debtor", "description", "amount_owed", "purchase_date", "timestamp"]],
             use_container_width=True,
         )
+    
+    # Section to delete expenses
+    st.subheader("🗑️ Manage My Expenses")
+    
+    # Get all unique expenses uploaded by this user (group by purchase_id)
+    my_expenses = items_df[items_df["uploader"] == username] if not items_df.empty else pd.DataFrame()
+    
+    if my_expenses.empty:
+        st.info("You haven't created any expenses yet.")
+    else:
+        # Group by purchase_id to show unique expenses
+        expense_groups = my_expenses.groupby("purchase_id").agg({
+            "description": "first",
+            "amount_total": "first",
+            "purchase_date": "first",
+            "timestamp": "first",
+            "debtor": lambda x: list(x)
+        }).reset_index()
+        
+        st.write("**Your expenses:**")
+        for _, expense in expense_groups.iterrows():
+            debtors = ", ".join(expense["debtor"])
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.write(f"**{expense['description']}** - ${expense['amount_total']:,.2f} (Shared with: {debtors})")
+                st.caption(f"Created: {expense['timestamp']} | Purchase date: {expense['purchase_date']}")
+            with col2:
+                if st.button("🗑️ Delete", key=f"delete_{expense['purchase_id']}"):
+                    try:
+                        delete_expense_debts(username, expense["purchase_id"])
+                        st.success(f"Deleted expense: {expense['description']}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error deleting expense: {str(e)}")
+            st.divider()
 
 
 def page_paychecks(username: str):
@@ -966,12 +1064,12 @@ def page_add_expense(username: str):
                     purchase_date=purchase_date,
                     uploaded_file=receipt_file,
                 )
-                st.success("Expense added and debts created.")
+                st.success("Expense added and debts created! 🎉")
                 st.rerun()
             except Exception as e:
                 st.error(f"Error creating expense: {str(e)}")
                 import traceback
-                st.error(traceback.format_exc())
+                st.code(traceback.format_exc(), language="python")
 
 
 def page_history(username: str):
@@ -1153,6 +1251,9 @@ def main():
         "Go to",
         ["Dashboard", "Update paychecks", "Add expense", "Approve payments", "History"],
     )
+    
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("💡 **Tip:** You can delete expenses you created from the Dashboard!")
 
     if page == "Dashboard":
         page_dashboard(username)
