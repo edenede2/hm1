@@ -179,7 +179,7 @@ def load_items_df() -> pd.DataFrame:
     if not df.empty:
         for col in ["amount_total", "amount_owed"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-        df["paid"] = df["paid"].astype(bool)
+        # Don't convert paid to bool here - let the UI handle it properly
 
     return df[ITEMS_HEADERS]
 
@@ -197,8 +197,7 @@ def load_archive_df() -> pd.DataFrame:
             df[col] = None
 
     if not df.empty:
-        df["paid"] = df["paid"].astype(bool)
-        df["approved"] = df["approved"].astype(bool)
+        # Don't convert paid/approved to bool here - let the UI handle it properly
         for col in ["amount_total", "amount_owed"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
