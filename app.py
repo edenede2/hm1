@@ -9,7 +9,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
-
+from googleapiclient.errors import HttpError
 # -------------------------------------------------------------------
 # CONFIG & CONSTANTS
 # -------------------------------------------------------------------
@@ -210,17 +210,28 @@ def load_archive_df() -> pd.DataFrame:
 # -------------------------------------------------------------------
 
 def upload_receipt_file(uploaded_file, purchase_id: str) -> Optional[str]:
-    """Upload receipt to Drive, return a sharing URL (or None)."""
+    """
+    Upload receipt to Drive, return a sharing URL (or None).
+
+    If drive_receipts_folder_id is not configured or upload fails,
+    returns None and shows a warning instead of crashing.
+    """
     if uploaded_file is None:
         return None
 
-    folder_id = st.secrets["app"].get("drive_receipts_folder_id", None)
+    # Get folder ID from secrets
+    folder_id = st.secrets["app"].get("drive_receipts_folder_id", "").strip()
     if not folder_id:
-        # No folder configured → skip upload
+        # Attachments disabled – just skip
+        st.warning(
+            "Receipt upload is disabled (no drive_receipts_folder_id configured). "
+            "The expense was created without a stored receipt."
+        )
         return None
 
     _, drive_service, _ = get_clients()
 
+    # Read file into memory
     file_bytes = uploaded_file.read()
     if not file_bytes:
         return None
@@ -235,17 +246,26 @@ def upload_receipt_file(uploaded_file, purchase_id: str) -> Optional[str]:
         "parents": [folder_id],
     }
 
-    file = (
-        drive_service.files()
-        .create(
-            body=metadata,
-            media_body=media,
-            fields="id,webViewLink,webContentLink",
+    try:
+        file = (
+            drive_service.files()
+            .create(
+                body=metadata,
+                media_body=media,
+                fields="id,webViewLink,webContentLink",
+            )
+            .execute()
         )
-        .execute()
-    )
-    return file.get("webViewLink") or file.get("webContentLink")
+    except HttpError as e:
+        # 403 with 'Service Accounts do not have storage quota' is common here
+        st.warning(
+            "Could not upload receipt to Google Drive. "
+            "The expense was created without a stored receipt.\n\n"
+            f"Drive API error: {e}"
+        )
+        return None
 
+    return file.get("webViewLink") or file.get("webContentLink")
 
 # -------------------------------------------------------------------
 # BUSINESS LOGIC
