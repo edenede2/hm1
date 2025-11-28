@@ -1,0 +1,5 @@
+streamlit[auth]
+gspread
+google-auth
+google-api-python-client
+pandas
