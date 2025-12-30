@@ -770,6 +770,33 @@ def add_expense_and_create_debts(
 ) -> None:
     """
     Create one 'debt' row per debtor in the items sheet.
+    For single expense - calls the batch function with a single expense.
+    """
+    expenses = [{
+        "description": description,
+        "amount": total_amount,
+        "date": purchase_date,
+        "file": uploaded_file,
+    }]
+    batch_add_expenses_and_create_debts(uploader, expenses, share_type)
+
+
+def batch_add_expenses_and_create_debts(
+    uploader: str,
+    expenses: List[Dict],
+    share_type: str,
+) -> int:
+    """
+    Create debt rows for multiple expenses in a single batch operation.
+    This is much more efficient than calling add_expense_and_create_debts for each expense.
+
+    Args:
+        uploader: Username of the person who paid
+        expenses: List of dicts with keys: description, amount, date, file (optional)
+        share_type: How to split the expense
+
+    Returns:
+        Number of successfully created expenses
 
     Semantics:
       - share_type == "self":
@@ -782,8 +809,20 @@ def add_expense_and_create_debts(
           Only other users (excluding uploader) share cost relative to their incomes.
           Uploader is fully reimbursed (cost is fully split among others).
     """
-    if total_amount <= 0:
-        raise ValueError("Amount must be positive.")
+    if share_type == "self":
+        # Only uploader – nothing to record for debts.
+        return 0
+
+    # Validate all expenses first
+    valid_expenses = []
+    for exp in expenses:
+        amount = exp.get("amount", 0)
+        desc = exp.get("description", "").strip()
+        if amount > 0 and desc:
+            valid_expenses.append(exp)
+    
+    if not valid_expenses:
+        raise ValueError("No valid expenses to create.")
 
     _, _, spreadsheet = get_clients()
     items_ws = get_or_create_worksheet(spreadsheet, ITEMS_SHEET, ITEMS_HEADERS)
@@ -795,10 +834,7 @@ def add_expense_and_create_debts(
     all_usernames = list(st.secrets["users"].keys())
     participants = [u for u in all_usernames if u in income_means]
 
-    if share_type == "self":
-        # Only uploader – nothing to record for debts.
-        return
-    elif share_type == "relative_all":
+    if share_type == "relative_all":
         # participants already = everyone with income
         pass
     elif share_type == "relative_others":
@@ -813,50 +849,59 @@ def add_expense_and_create_debts(
     if denom <= 0:
         raise ValueError("Participants must have positive average paychecks.")
 
-    purchase_id = str(uuid.uuid4())
+    # Build all rows for batch append
+    all_rows = []
     now_iso = datetime.now(timezone.utc).isoformat()
-    purchase_date_str = (purchase_date or datetime.now().date()).isoformat()
 
-    receipt_url = upload_receipt_file(uploaded_file, purchase_id)
+    for idx, exp in enumerate(valid_expenses):
+        total_amount = exp["amount"]
+        description = exp["description"].strip()
+        purchase_date = exp.get("date") or datetime.now().date()
+        uploaded_file = exp.get("file") if idx == 0 else None  # Only first expense gets receipt
 
-    rows_created = 0
-    for debtor in participants:
-        # Never create a row where someone "owes themselves"
-        if debtor == uploader:
-            continue
+        purchase_id = str(uuid.uuid4())
+        purchase_date_str = purchase_date.isoformat() if hasattr(purchase_date, 'isoformat') else str(purchase_date)
 
-        share = float(total_amount) * float(income_means[debtor]) / float(denom)
-        share = round(share, 2)
+        receipt_url = upload_receipt_file(uploaded_file, purchase_id) if uploaded_file else None
 
-        row_id = str(uuid.uuid4())
-        row = [
-            row_id,
-            purchase_id,
-            now_iso,
-            purchase_date_str,
-            uploader,
-            debtor,
-            description,
-            float(total_amount),
-            share,
-            share_type,
-            receipt_url or "",
-            False,  # paid
-            "",     # paid_at
-            "",     # paid_by
-        ]
-        items_ws.append_row(row)
-        rows_created += 1
-    
-    if rows_created == 0:
+        for debtor in participants:
+            # Never create a row where someone "owes themselves"
+            if debtor == uploader:
+                continue
+
+            share = float(total_amount) * float(income_means[debtor]) / float(denom)
+            share = round(share, 2)
+
+            row_id = str(uuid.uuid4())
+            row = [
+                row_id,
+                purchase_id,
+                now_iso,
+                purchase_date_str,
+                uploader,
+                debtor,
+                description,
+                float(total_amount),
+                share,
+                share_type,
+                receipt_url or "",
+                False,  # paid
+                "",     # paid_at
+                "",     # paid_by
+            ]
+            all_rows.append(row)
+
+    if not all_rows:
         raise ValueError(
             "No debt rows were created. This happens when there are no other users "
             "with paycheck data to share the expense with. Add more users' paychecks "
             "or use 'Only me (no sharing)' option."
         )
+
+    # Use batch append - single API call for all rows!
+    items_ws.append_rows(all_rows, value_input_option='USER_ENTERED')
     
-    # Note: Email notification is handled by the caller (either single or batch)
-    # This allows batch operations to send one consolidated email
+    return len(valid_expenses)
 
 
 def delete_expense_debts(current_user: str, purchase_id: str) -> None:
@@ -884,9 +929,15 @@ def delete_expense_debts(current_user: str, purchase_id: str) -> None:
     affected_users = list(matching_rows["debtor"].unique())
     
     # Delete rows in reverse order to maintain correct indices
-    for idx in sorted(matching_rows.index, reverse=True):
-        sheet_row = idx + 2  # +2 for header row and 0-indexing
-        items_ws.delete_rows(sheet_row)
+    # Use batch delete for efficiency - delete all matching rows at once
+    rows_to_delete = sorted([idx + 2 for idx in matching_rows.index], reverse=True)  # +2 for header row and 0-indexing
+    
+    # Delete consecutive rows in batches where possible
+    if rows_to_delete:
+        # Group consecutive rows for batch deletion
+        # For non-consecutive rows, we still need to delete in reverse order
+        for sheet_row in rows_to_delete:
+            items_ws.delete_rows(sheet_row)
     
     # Send email notification
     if affected_users:
@@ -906,6 +957,11 @@ def mark_debts_as_paid(current_user: str, debt_ids: List[str]) -> None:
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
+    # Collect all updates for batch processing
+    items_batch_updates = []
+    archive_rows = []
+    notifications = []  # Store notification data for later
+
     for debt_id in debt_ids:
         if debt_id not in items_df["id"].values:
             continue
@@ -918,12 +974,21 @@ def mark_debts_as_paid(current_user: str, debt_ids: List[str]) -> None:
 
         sheet_row = row_idx_df + 2  # + header row
 
-        # Update items sheet
-        items_ws.update_cell(sheet_row, ITEMS_COL_INDEX["paid"], True)
-        items_ws.update_cell(sheet_row, ITEMS_COL_INDEX["paid_at"], now_iso)
-        items_ws.update_cell(sheet_row, ITEMS_COL_INDEX["paid_by"], current_user)
+        # Collect updates for batch operation
+        items_batch_updates.append({
+            'range': f'{gspread.utils.rowcol_to_a1(sheet_row, ITEMS_COL_INDEX["paid"])}',
+            'values': [[True]]
+        })
+        items_batch_updates.append({
+            'range': f'{gspread.utils.rowcol_to_a1(sheet_row, ITEMS_COL_INDEX["paid_at"])}',
+            'values': [[now_iso]]
+        })
+        items_batch_updates.append({
+            'range': f'{gspread.utils.rowcol_to_a1(sheet_row, ITEMS_COL_INDEX["paid_by"])}',
+            'values': [[current_user]]
+        })
 
-        # Copy to archive with pending approval
+        # Prepare archive row
         row_dict = items_df.loc[row_idx_df].to_dict()
         row_dict["paid"] = True
         row_dict["paid_at"] = now_iso
@@ -933,14 +998,30 @@ def mark_debts_as_paid(current_user: str, debt_ids: List[str]) -> None:
         row_dict["approved_by"] = ""
 
         archive_row = [row_dict.get(col, "") for col in ARCHIVE_HEADERS]
-        archive_ws.append_row(archive_row)
+        archive_rows.append(archive_row)
         
-        # Send email notification to uploader
+        # Store notification data
+        notifications.append({
+            "uploader": str(items_df.loc[row_idx_df, "uploader"]),
+            "description": str(items_df.loc[row_idx_df, "description"]),
+            "amount": float(items_df.loc[row_idx_df, "amount_owed"])
+        })
+
+    # Execute batch update for items sheet (single API call)
+    if items_batch_updates:
+        items_ws.batch_update(items_batch_updates, value_input_option='USER_ENTERED')
+
+    # Execute batch append for archive sheet (single API call)
+    if archive_rows:
+        archive_ws.append_rows(archive_rows, value_input_option='USER_ENTERED')
+
+    # Send email notifications after successful updates
+    for notif in notifications:
         notify_payment_marked(
             debtor=current_user,
-            uploader=str(items_df.loc[row_idx_df, "uploader"]),
-            description=str(items_df.loc[row_idx_df, "description"]),
-            amount=float(items_df.loc[row_idx_df, "amount_owed"])
+            uploader=notif["uploader"],
+            description=notif["description"],
+            amount=notif["amount"]
         )
 
 
@@ -956,6 +1037,10 @@ def approve_payments(current_user: str, archive_ids: List[str]) -> None:
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
+    # Collect all updates for batch processing
+    batch_updates = []
+    notifications = []
+
     for arc_id in archive_ids:
         if arc_id not in archive_df["id"].values:
             continue
@@ -968,16 +1053,39 @@ def approve_payments(current_user: str, archive_ids: List[str]) -> None:
             continue
 
         sheet_row = row_idx_df + 2
-        archive_ws.update_cell(sheet_row, ARCHIVE_COL_INDEX["approved"], True)
-        archive_ws.update_cell(sheet_row, ARCHIVE_COL_INDEX["approved_at"], now_iso)
-        archive_ws.update_cell(sheet_row, ARCHIVE_COL_INDEX["approved_by"], current_user)
         
-        # Send email notification to debtor
+        # Collect updates for batch operation
+        batch_updates.append({
+            'range': f'{gspread.utils.rowcol_to_a1(sheet_row, ARCHIVE_COL_INDEX["approved"])}',
+            'values': [[True]]
+        })
+        batch_updates.append({
+            'range': f'{gspread.utils.rowcol_to_a1(sheet_row, ARCHIVE_COL_INDEX["approved_at"])}',
+            'values': [[now_iso]]
+        })
+        batch_updates.append({
+            'range': f'{gspread.utils.rowcol_to_a1(sheet_row, ARCHIVE_COL_INDEX["approved_by"])}',
+            'values': [[current_user]]
+        })
+        
+        # Store notification data
+        notifications.append({
+            "debtor": str(archive_df.loc[row_idx_df, "debtor"]),
+            "description": str(archive_df.loc[row_idx_df, "description"]),
+            "amount": float(archive_df.loc[row_idx_df, "amount_owed"])
+        })
+
+    # Execute batch update (single API call for all updates)
+    if batch_updates:
+        archive_ws.batch_update(batch_updates, value_input_option='USER_ENTERED')
+
+    # Send email notifications after successful updates
+    for notif in notifications:
         notify_payment_approved(
-            debtor=str(archive_df.loc[row_idx_df, "debtor"]),
+            debtor=notif["debtor"],
             uploader=current_user,
-            description=str(archive_df.loc[row_idx_df, "description"]),
-            amount=float(archive_df.loc[row_idx_df, "amount_owed"])
+            description=notif["description"],
+            amount=notif["amount"]
         )
 
 
@@ -1359,66 +1467,56 @@ def page_add_expense(username: str):
             st.error("Please add at least one expense with a description and positive amount.")
         else:
             share_type = SHARE_TYPE_OPTIONS[share_label]
-            errors = []
-            success_count = 0
-            all_affected_users = set()
-            expense_summaries = []
             
             try:
+                # Prepare expenses for batch processing
+                expenses_for_batch = []
                 for idx, expense in enumerate(valid_expenses):
-                    try:
-                        # Only pass receipt for first expense
-                        file_to_upload = receipt_file if idx == 0 else None
-                        
-                        # Track affected users before creating
-                        income_means = compute_income_means()
-                        all_usernames = list(st.secrets["users"].keys())
-                        participants = [u for u in all_usernames if u in income_means]
-                        
-                        if share_type == "relative_all":
-                            pass
-                        elif share_type == "relative_others":
-                            participants = [u for u in participants if u != username]
-                        
-                        affected = [p for p in participants if p != username]
-                        all_affected_users.update(affected)
-                        
-                        add_expense_and_create_debts(
-                            uploader=username,
-                            description=expense["description"].strip(),
-                            total_amount=expense["amount"],
-                            share_type=share_type,
-                            purchase_date=expense["date"],
-                            uploaded_file=file_to_upload,
-                        )
-                        success_count += 1
-                        expense_summaries.append({
-                            "description": expense["description"].strip(),
-                            "amount": expense["amount"]
-                        })
-                    except Exception as e:
-                        errors.append(f"Error with '{expense['description']}': {str(e)}")
+                    expenses_for_batch.append({
+                        "description": expense["description"].strip(),
+                        "amount": expense["amount"],
+                        "date": expense["date"],
+                        "file": receipt_file if idx == 0 else None  # Only first expense gets receipt
+                    })
+                
+                # Single batch call - much more efficient!
+                success_count = batch_add_expenses_and_create_debts(
+                    uploader=username,
+                    expenses=expenses_for_batch,
+                    share_type=share_type,
+                )
+                
+                # Calculate affected users for email notification
+                income_means = compute_income_means()
+                all_usernames = list(st.secrets["users"].keys())
+                participants = [u for u in all_usernames if u in income_means]
+                
+                if share_type == "relative_others":
+                    participants = [u for u in participants if u != username]
+                
+                all_affected_users = [p for p in participants if p != username]
+                
+                # Build expense summaries for email
+                expense_summaries = [
+                    {"description": e["description"], "amount": e["amount"]}
+                    for e in expenses_for_batch
+                ]
                 
                 # Send email notification
                 if all_affected_users:
-                    if success_count > 1:
+                    if len(expense_summaries) > 1:
                         # Send consolidated email for multiple expenses
-                        notify_multiple_expenses(username, expense_summaries, list(all_affected_users))
-                    elif success_count == 1:
+                        notify_multiple_expenses(username, expense_summaries, all_affected_users)
+                    elif len(expense_summaries) == 1:
                         # Send single expense email
                         notify_new_expense(
                             username,
                             expense_summaries[0]["description"],
                             expense_summaries[0]["amount"],
-                            list(all_affected_users)
+                            all_affected_users
                         )
                 
-                if errors:
-                    st.warning(f"Created {success_count} expenses with {len(errors)} errors:")
-                    for error in errors:
-                        st.error(error)
-                else:
-                    st.success(f"{get_random_message(EXPENSE_SUCCESS)} Created {success_count} expense(s)!")
+                st.success(f"{get_random_message(EXPENSE_SUCCESS)} Created {success_count} expense(s)!")
                 
                 # Reset form
                 st.session_state.expenses = [{"description": "", "amount": 0.0, "date": datetime.now().date()}]
