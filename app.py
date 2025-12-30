@@ -605,20 +605,30 @@ def get_or_create_worksheet(spreadsheet, title: str, headers: List[str]):
         ws.append_row(headers)
         return ws
 
-    first_row = ws.row_values(1)
-    if not first_row:
-        ws.append_row(headers)
+    # Skip the header check - assume headers exist if worksheet exists
+    # This saves one API call per worksheet access
     return ws
 
 
 # -------------------------------------------------------------------
-# DATA ACCESS HELPERS
+# DATA ACCESS HELPERS WITH CACHING
 # -------------------------------------------------------------------
 
-def load_paychecks_df() -> pd.DataFrame:
+def invalidate_data_cache():
+    """Call this after any data modification to clear cached data."""
+    st.cache_data.clear()
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_load_paychecks() -> List[Dict]:
+    """Cached version of paychecks loading - returns raw records."""
     _, _, spreadsheet = get_clients()
     ws = get_or_create_worksheet(spreadsheet, PAYCHECKS_SHEET, PAYCHECKS_HEADERS)
-    records = ws.get_all_records()
+    return ws.get_all_records()
+
+
+def load_paychecks_df() -> pd.DataFrame:
+    records = _cached_load_paychecks()
     if not records:
         return pd.DataFrame(columns=PAYCHECKS_HEADERS)
 
@@ -642,13 +652,23 @@ def upsert_paychecks(username: str, p1: float, p2: float, p3: float) -> None:
         ws.update(f"A{row_number}:E{row_number}", [[username, p1, p2, p3, avg_val]])
     else:
         ws.append_row([username, p1, p2, p3, avg_val])
+    
+    # Invalidate cache after modification
+    invalidate_data_cache()
 
 
-def compute_income_means() -> Dict[str, float]:
-    """Return {username: mean_of_last_3_paychecks}."""
-    df = load_paychecks_df()
-    if df.empty:
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_compute_income_means() -> Dict[str, float]:
+    """Cached computation of income means."""
+    records = _cached_load_paychecks()
+    if not records:
         return {}
+
+    df = pd.DataFrame(records)
+    for col in PAYCHECKS_HEADERS:
+        if col not in df.columns:
+            df[col] = None
+    df = df[PAYCHECKS_HEADERS]
 
     for col in ["pay1", "pay2", "pay3"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -658,10 +678,21 @@ def compute_income_means() -> Dict[str, float]:
     return dict(zip(df["username"], df["average"]))
 
 
-def load_items_df() -> pd.DataFrame:
+def compute_income_means() -> Dict[str, float]:
+    """Return {username: mean_of_last_3_paychecks}."""
+    return _cached_compute_income_means()
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_load_items() -> List[Dict]:
+    """Cached version of items loading - returns raw records."""
     _, _, spreadsheet = get_clients()
     ws = get_or_create_worksheet(spreadsheet, ITEMS_SHEET, ITEMS_HEADERS)
-    records = ws.get_all_records()
+    return ws.get_all_records()
+
+
+def load_items_df() -> pd.DataFrame:
+    records = _cached_load_items()
     if not records:
         return pd.DataFrame(columns=ITEMS_HEADERS)
 
@@ -678,10 +709,16 @@ def load_items_df() -> pd.DataFrame:
     return df[ITEMS_HEADERS]
 
 
-def load_archive_df() -> pd.DataFrame:
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_load_archive() -> List[Dict]:
+    """Cached version of archive loading - returns raw records."""
     _, _, spreadsheet = get_clients()
     ws = get_or_create_worksheet(spreadsheet, ARCHIVE_SHEET, ARCHIVE_HEADERS)
-    records = ws.get_all_records()
+    return ws.get_all_records()
+
+
+def load_archive_df() -> pd.DataFrame:
+    records = _cached_load_archive()
     if not records:
         return pd.DataFrame(columns=ARCHIVE_HEADERS)
 
@@ -901,47 +938,101 @@ def batch_add_expenses_and_create_debts(
     # Use batch append - single API call for all rows!
     items_ws.append_rows(all_rows, value_input_option='USER_ENTERED')
     
+    # Invalidate cache after modification
+    invalidate_data_cache()
+    
     return len(valid_expenses)
 
 
 def delete_expense_debts(current_user: str, purchase_id: str) -> None:
     """Delete all debt rows associated with a purchase_id (only if current_user is the uploader)."""
+    batch_delete_expense_debts(current_user, [purchase_id])
+
+
+def batch_delete_expense_debts(current_user: str, purchase_ids: List[str]) -> int:
+    """
+    Delete all debt rows associated with multiple purchase_ids in a batch operation.
+    Only deletes expenses where current_user is the uploader.
+    
+    Returns:
+        Number of successfully deleted expenses
+    """
+    if not purchase_ids:
+        return 0
+        
     _, _, spreadsheet = get_clients()
     items_ws = get_or_create_worksheet(spreadsheet, ITEMS_SHEET, ITEMS_HEADERS)
     
     items_df = load_items_df()
     if items_df.empty:
-        return
+        return 0
     
-    # Get all rows with this purchase_id
-    matching_rows = items_df[items_df["purchase_id"] == purchase_id]
+    # Get all rows matching any of the purchase_ids
+    matching_rows = items_df[items_df["purchase_id"].isin(purchase_ids)]
     if matching_rows.empty:
-        return
+        return 0
     
-    # Verify current user is the uploader
-    uploader = str(matching_rows.iloc[0]["uploader"])
-    if uploader != current_user:
-        raise ValueError("You can only delete expenses that you created.")
+    # Filter to only rows where current_user is the uploader
+    matching_rows = matching_rows[matching_rows["uploader"] == current_user]
+    if matching_rows.empty:
+        return 0
     
-    # Get info for email notification
-    description = str(matching_rows.iloc[0]["description"])
-    total_amount = float(matching_rows.iloc[0]["amount_total"])
-    affected_users = list(matching_rows["debtor"].unique())
+    # Collect info for email notifications (group by purchase_id)
+    deleted_purchases = set()
+    notifications_data = []
+    for pid in matching_rows["purchase_id"].unique():
+        pid_rows = matching_rows[matching_rows["purchase_id"] == pid]
+        notifications_data.append({
+            "description": str(pid_rows.iloc[0]["description"]),
+            "total_amount": float(pid_rows.iloc[0]["amount_total"]),
+            "affected_users": list(pid_rows["debtor"].unique())
+        })
+        deleted_purchases.add(pid)
     
-    # Delete rows in reverse order to maintain correct indices
-    # Use batch delete for efficiency - delete all matching rows at once
-    rows_to_delete = sorted([idx + 2 for idx in matching_rows.index], reverse=True)  # +2 for header row and 0-indexing
+    # Get all sheet row numbers (sorted in reverse to maintain indices when deleting)
+    rows_to_delete = sorted([idx + 2 for idx in matching_rows.index], reverse=True)
     
-    # Delete consecutive rows in batches where possible
     if rows_to_delete:
+        # Use batch delete request via Sheets API for maximum efficiency
         # Group consecutive rows for batch deletion
-        # For non-consecutive rows, we still need to delete in reverse order
-        for sheet_row in rows_to_delete:
-            items_ws.delete_rows(sheet_row)
+        delete_requests = []
+        i = 0
+        while i < len(rows_to_delete):
+            start_row = rows_to_delete[i]
+            end_row = start_row
+            
+            # Find consecutive rows (remember we're going in reverse, so consecutive means -1)
+            while i + 1 < len(rows_to_delete) and rows_to_delete[i + 1] == rows_to_delete[i] - 1:
+                i += 1
+                end_row = rows_to_delete[i]
+            
+            # end_row is the smaller number (earlier row), start_row is larger (later row)
+            # Sheets API deleteDimension uses 0-indexed, exclusive end
+            delete_requests.append({
+                'deleteDimension': {
+                    'range': {
+                        'sheetId': items_ws.id,
+                        'dimension': 'ROWS',
+                        'startIndex': end_row - 1,  # Convert to 0-indexed
+                        'endIndex': start_row  # Exclusive, so this is correct
+                    }
+                }
+            })
+            i += 1
+        
+        # Execute all deletes in a single batch request
+        if delete_requests:
+            spreadsheet.batch_update({'requests': delete_requests})
     
-    # Send email notification
-    if affected_users:
-        notify_expense_deleted(current_user, description, total_amount, affected_users)
+    # Invalidate cache after modification
+    invalidate_data_cache()
+    
+    # Send email notifications
+    for notif in notifications_data:
+        if notif["affected_users"]:
+            notify_expense_deleted(current_user, notif["description"], notif["total_amount"], notif["affected_users"])
+    
+    return len(deleted_purchases)
 
 def mark_debts_as_paid(current_user: str, debt_ids: List[str]) -> None:
     if not debt_ids:
@@ -1015,6 +1106,9 @@ def mark_debts_as_paid(current_user: str, debt_ids: List[str]) -> None:
     if archive_rows:
         archive_ws.append_rows(archive_rows, value_input_option='USER_ENTERED')
 
+    # Invalidate cache after modification
+    invalidate_data_cache()
+
     # Send email notifications after successful updates
     for notif in notifications:
         notify_payment_marked(
@@ -1078,6 +1172,9 @@ def approve_payments(current_user: str, archive_ids: List[str]) -> None:
     # Execute batch update (single API call for all updates)
     if batch_updates:
         archive_ws.batch_update(batch_updates, value_input_option='USER_ENTERED')
+
+    # Invalidate cache after modification
+    invalidate_data_cache()
 
     # Send email notifications after successful updates
     for notif in notifications:
@@ -1274,23 +1371,12 @@ def page_dashboard(username: str):
                 st.warning(f"⚠️ You are about to delete {len(selected_for_deletion)} expense(s). This action cannot be undone!")
                 
                 if st.button("🗑️ Delete Selected Expenses", type="primary", use_container_width=True):
-                    deleted_count = 0
-                    errors = []
-                    
-                    for purchase_id in selected_for_deletion:
-                        try:
-                            delete_expense_debts(username, purchase_id)
-                            deleted_count += 1
-                        except Exception as e:
-                            exp_desc = expense_groups[expense_groups['purchase_id'] == purchase_id]['description'].iloc[0]
-                            errors.append(f"Error deleting '{exp_desc}': {str(e)}")
-                    
-                    if errors:
-                        st.warning(f"Deleted {deleted_count} expenses with {len(errors)} errors:")
-                        for error in errors:
-                            st.error(error)
-                    else:
+                    try:
+                        # Use batch delete - single API call for all deletions!
+                        deleted_count = batch_delete_expense_debts(username, selected_for_deletion)
                         st.success(f"{get_random_message(DELETE_SUCCESS)} Deleted {deleted_count} expense(s)!")
+                    except Exception as e:
+                        st.error(f"Error deleting expenses: {str(e)}")
                     
                     st.rerun()
         
