@@ -619,7 +619,7 @@ def invalidate_data_cache():
     st.cache_data.clear()
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def _cached_load_paychecks() -> List[Dict]:
     """Cached version of paychecks loading - returns raw records."""
     _, _, spreadsheet = get_clients()
@@ -657,7 +657,7 @@ def upsert_paychecks(username: str, p1: float, p2: float, p3: float) -> None:
     invalidate_data_cache()
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def _cached_compute_income_means() -> Dict[str, float]:
     """Cached computation of income means."""
     records = _cached_load_paychecks()
@@ -683,7 +683,7 @@ def compute_income_means() -> Dict[str, float]:
     return _cached_compute_income_means()
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def _cached_load_items() -> List[Dict]:
     """Cached version of items loading - returns raw records."""
     _, _, spreadsheet = get_clients()
@@ -709,7 +709,7 @@ def load_items_df() -> pd.DataFrame:
     return df[ITEMS_HEADERS]
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def _cached_load_archive() -> List[Dict]:
     """Cached version of archive loading - returns raw records."""
     _, _, spreadsheet = get_clients()
@@ -822,7 +822,7 @@ def batch_add_expenses_and_create_debts(
     uploader: str,
     expenses: List[Dict],
     share_type: str,
-) -> int:
+) -> tuple:
     """
     Create debt rows for multiple expenses in a single batch operation.
     This is much more efficient than calling add_expense_and_create_debts for each expense.
@@ -833,7 +833,7 @@ def batch_add_expenses_and_create_debts(
         share_type: How to split the expense
 
     Returns:
-        Number of successfully created expenses
+        Tuple of (number of successfully created expenses, list of affected users)
 
     Semantics:
       - share_type == "self":
@@ -848,7 +848,7 @@ def batch_add_expenses_and_create_debts(
     """
     if share_type == "self":
         # Only uploader – nothing to record for debts.
-        return 0
+        return (0, [])
 
     # Validate all expenses first
     valid_expenses = []
@@ -941,7 +941,9 @@ def batch_add_expenses_and_create_debts(
     # Invalidate cache after modification
     invalidate_data_cache()
     
-    return len(valid_expenses)
+    # Return count and affected users (debtors who are not the uploader)
+    affected_users = [p for p in participants if p != uploader]
+    return (len(valid_expenses), affected_users)
 
 
 def delete_expense_debts(current_user: str, purchase_id: str) -> None:
@@ -1566,21 +1568,11 @@ def page_add_expense(username: str):
                     })
                 
                 # Single batch call - much more efficient!
-                success_count = batch_add_expenses_and_create_debts(
+                success_count, all_affected_users = batch_add_expenses_and_create_debts(
                     uploader=username,
                     expenses=expenses_for_batch,
                     share_type=share_type,
                 )
-                
-                # Calculate affected users for email notification
-                income_means = compute_income_means()
-                all_usernames = list(st.secrets["users"].keys())
-                participants = [u for u in all_usernames if u in income_means]
-                
-                if share_type == "relative_others":
-                    participants = [u for u in participants if u != username]
-                
-                all_affected_users = [p for p in participants if p != username]
                 
                 # Build expense summaries for email
                 expense_summaries = [
