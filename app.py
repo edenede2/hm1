@@ -1198,7 +1198,7 @@ def require_login() -> str:
         st.title("Household Expense Manager")
         st.info("Log in with Google to manage shared household expenses.")
         if st.button("Log in with Google"):
-            st.login()  # uses [auth] settings in secrets.toml
+            st.login("google")  # uses [auth] settings in secrets.toml
         st.stop()
 
     email = getattr(st.user, "email", None)
